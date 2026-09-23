@@ -1,0 +1,18 @@
+WebKD
+
+This distribution includes modified components from the following projects:
+
+- LLaMA-Factory: https://github.com/hiyouga/LLaMA-Factory
+  The integration files and training-time alignment helpers retain their
+  Apache-2.0 notices. Modifications add WebKD weights, masks, and the frozen
+  student anchor.
+
+- AgentLab: https://github.com/ServiceNow/AgentLab
+  Copyright 2024 ServiceNow. The trajectory-recording adapter extends the
+  Apache-2.0 generic-agent interface.
+
+- WebAgent-R1: https://arxiv.org/abs/2505.16421
+  The policy-gradient baseline adapts the Apache-2.0 verifiers training core
+  for TimeWarp. Its license is also included under baselines/rl/LICENSE.
+
+Upstream names and notices are retained for attribution; no endorsement is implied.

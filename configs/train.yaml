@@ -1,0 +1,24 @@
+# General full-parameter fine-tuning configuration. Model, data, and output
+# locations are supplied by `webkd train`.
+stage: sft
+do_train: true
+finetuning_type: full
+cutoff_len: 32768
+packing: false
+mask_history: false
+train_on_prompt: false
+overwrite_cache: true
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-5
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+gradient_checkpointing: true
+logging_steps: 10
+save_strategy: epoch
+save_only_model: false
+report_to: none
+seed: 42
+data_seed: 42

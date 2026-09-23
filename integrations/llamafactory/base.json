@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/hiyouga/LLaMA-Factory",
+  "revision": "97b32d3133b501432141a82949d5c7bc4d94f23a",
+  "files": {
+    "data/collator.py": "d9c0c4d5583001c9e2f9825de7dbf2f57cd7c724d0b3c70b4e9cd61cda08edb2",
+    "data/processor/supervised.py": "f1b4b8db32179f7471e7c0bf45806533f8cabe8ade98d3a6b427d80a94b959cf",
+    "train/sft/trainer.py": "4016aa09576891d53f2f3ee8f0cd21cd0f5c80c8ee1f45ab964a00750253d7c9"
+  }
+}
