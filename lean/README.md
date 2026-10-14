@@ -118,9 +118,8 @@ Euclidean norm, written out; steps are `0`-based in Lean (`range T` is the paper
 ## Trust
 
 Trusted: Lean kernel `leanprover/lean4:v4.34.0-rc2`, Mathlib `85e3a25e006c35636f0e53b0e9296caca2685bc0`,
-axioms `propext`, `Classical.choice`, `Quot.sound`. Kernel replay: pass (every declaration of the
-package re-checked by the kernel; the `--fresh` replay of all imported constants was still running
-when this was written). Independent kernel: none, so this is single-kernel trust. Numeric
+axioms `propext`, `Classical.choice`, `Quot.sound`. Kernel replay: pass, `--fresh`: yes (every constant the
+package sees, Mathlib included, replayed into an empty environment). Independent kernel: none, so this is single-kernel trust. Numeric
 falsification: pass. Statements human-approved: yes (2026-10-14).
 
 The audit (the `/theory` skill's `lean_audit.py`) recompiles the package from source into a
@@ -128,8 +127,8 @@ temporary directory, checks that `Defs.lean` and `Statements.lean` match their f
 scans every source for forbidden constructs (`sorry`, `axiom`, `native_decide`, `implemented_by`,
 `unsafe`, metaprograms, ...), checks that each `WebKD.<label>` proves
 `WebKD.Statements.<label>`, prints the axioms of each result and of every line of `Audit.lean`,
-and replays every declaration through the kernel. Verdict on 2026-10-14: PASS, all 16 statements
-`VERIFIED`.
+and replays every declaration through the kernel (with `--fresh`, every imported constant too).
+Verdict on 2026-10-14, with and without `--fresh`: PASS, all 16 statements `VERIFIED`.
 
 Version hygiene: the kernel soundness fixes of Lean 4.34.0 (#14806, #14807, #14838) are in
 `v4.34.0-rc2` (the release notes shipped with rc2 list them). Lean 4.35.0 release candidates fix

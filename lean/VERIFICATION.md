@@ -108,7 +108,8 @@ axioms are trusted.
   frozen statements unchanged, source scan clean (no forbidden or flagged construct), the 16
   statements bound to their proofs, axioms `propext`, `Classical.choice`, `Quot.sound` only (on
   every result and every line of `Audit.lean`), kernel replay of every package declaration: pass.
-  **Verdict: PASS, 16/16 VERIFIED.**
+  **Verdict: PASS, 16/16 VERIFIED.** The final `--fresh` run replayed every constant the package
+  sees, Mathlib included, into an empty environment (2765 s): pass, 16/16 VERIFIED.
 - **Second kernel:** none installed (lean4lean, nanoda, Comparator). Residual risk: single-kernel
   trust.
 - **Version hygiene:** the Lean 4.34.0 kernel soundness fixes (#14806, #14807, #14838) are in
