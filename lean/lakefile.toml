@@ -4,6 +4,7 @@ keywords = ["math"]
 defaultTargets = ["WebkdLean"]
 
 [leanOptions]
+autoImplicit = false # a typo must be an error, not a new universally quantified variable
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
 relaxedAutoImplicit = false
 weak.linter.mathlibStandardSet = true

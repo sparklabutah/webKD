@@ -1,4 +1,7 @@
-import Mathlib
+import WebkdLean.Statements
+
+set_option autoImplicit false
+set_option relaxedAutoImplicit false
 
 /-!
 # Softmax cross-entropy and Lemma `sandwich`
@@ -11,10 +14,7 @@ namespace WebKD
 
 open Finset
 
-variable {ι : Type*} [Fintype ι]
-
-/-- Softmax of the logits `z`. -/
-noncomputable def softmax (z : ι → ℝ) (v : ι) : ℝ := Real.exp (z v) / ∑ u, Real.exp (z u)
+variable {ι : Type} [Fintype ι]
 
 lemma sum_exp_pos [Nonempty ι] (z : ι → ℝ) : 0 < ∑ u, Real.exp (z u) :=
   Finset.sum_pos (fun _ _ => Real.exp_pos _) Finset.univ_nonempty
@@ -28,9 +28,6 @@ lemma softmax_nonneg [Nonempty ι] (z : ι → ℝ) (v : ι) : 0 ≤ softmax z v
 lemma softmax_sum [Nonempty ι] (z : ι → ℝ) : ∑ v, softmax z v = 1 := by
   unfold softmax
   rw [← Finset.sum_div, div_self (sum_exp_pos z).ne']
-
-/-- Per-token cross-entropy `CE = -log softmax(z)_y`. -/
-noncomputable def nll (y : ι) (z : ι → ℝ) : ℝ := -Real.log (softmax z y)
 
 lemma nll_eq [Nonempty ι] (y : ι) (z : ι → ℝ) :
     nll y z = -z y + Real.log (∑ u, Real.exp (z u)) := by

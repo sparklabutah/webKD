@@ -1,32 +1,30 @@
-import Mathlib
-import WebkdLean.Softmax
+import WebkdLean.Proofs.Softmax
+
+set_option autoImplicit false
+set_option relaxedAutoImplicit false
 
 /-!
-# Role-asymmetric anchoring: the per-token target
+# Role-asymmetric anchoring (Eq. `kl-grad`, Proposition `target`, Corollaries `beta`, `budget`)
 
-Formalizes the throttle of Eq. `kl-grad` in its scalar form (Appendix `proof-target`),
-Proposition `target` (the per-token optimum `p⋆`), Corollary `beta` (critical anchor strength)
-and Corollary `budget` (per-token premium budget), including the monotonicity claims, and the
-coordinate (full-softmax) form of Eq. `kl-grad`: the anchor rescales the SFT direction `p - e_y`
-by the throttle and never rotates it.
+Strategy, following Appendix `proof-target`. Position `i` contributes
+`L_i(p) = -a log p + b (q/p + log(p/q) - 1)` with `dL_i/dp = -c_i(p)/p` for the throttle
+`c_i(p) = a - b(1 - q/p)` (`hasDerivAt_anchorLoss`). For `b > 0` the throttle is strictly decreasing
+(`throttle_strictAnti`) and vanishes exactly at `q b/(b - a)` when `0 < a < b`
+(`throttle_eq_zero_iff`), so it is positive below that point and negative above it
+(`throttle_sign`). The minimization is proved directly, without calculus, from `log x ≤ x - 1`:
+`L(p) - L(p̂) = (q b/p̂)((p̂/p - 1) - log(p̂/p)) ≥ 0` at the interior point; at the boundary `p⋆ = 1`
+it is `L(p) - L(1) = (b - a) log p + b q (1/p - 1) ≥ 0`, by `log p ≤ 0` when `b ≤ a` and by
+`log p ≥ 1 - 1/p` with `b - a < q b` when the interior point exceeds `1` (`anchorLoss_pStar_le`).
+The paper's proof reaches the same minimizer through the sign of the derivative. The cap binds (`p⋆ < 1`) iff `b(1 - q) > a`
+(`pStar_lt_one_iff`), which in anchor strength reads `β > β̄/(1 - q)`. The budget is
+`log(p⋆/q) ≤ log(b/(b - a)) = -log(1 - a/b)`, with equality when the interior point is at most `1`.
+The chain rule through the softmax gives the coordinate form `∇_z L_i = c_i (p - e_y)`
+(`hasDerivAt_anchored_coord`).
 -/
 
 namespace WebKD
 
 open Real
-
-/-- Per-position contribution of the anchored objective (Appendix `proof-target`):
-`L_i(p) = -a log p + b (q/p + log(p/q) - 1)`, with `a = w_i/∑w`, `b = β γ_i/∑γ`,
-`q = π_ref(y_i)`. -/
-noncomputable def anchorLoss (a b q p : ℝ) : ℝ :=
-  -a * Real.log p + b * (q / p + Real.log (p / q) - 1)
-
-/-- The throttle `c_i(p) = a - b (1 - q/p)` of Eq. `kl-grad`. -/
-noncomputable def throttle (a b q p : ℝ) : ℝ := a - b * (1 - q / p)
-
-/-- The per-token target `p⋆` of Eq. `pstar`. -/
-noncomputable def pStar (a b q : ℝ) : ℝ :=
-  if a < b then min 1 (q * b / (b - a)) else 1
 
 /-- `dL_i/dp = -c_i(p)/p`: the anchor rescales the SFT force through the throttle. -/
 theorem hasDerivAt_anchorLoss (a b q p : ℝ) (hp : 0 < p) (hq : 0 < q) :
@@ -44,6 +42,7 @@ theorem hasDerivAt_anchorLoss (a b q p : ℝ) (hp : 0 < p) (hq : 0 < q) :
     funext x; simp [anchorLoss]
   rw [hfun]
   refine h5.congr_deriv ?_
+  -- collect `-a/p + b(-q/p² + 1/p)` into `-c(p)/p`
   unfold throttle
   field_simp
   ring
@@ -108,7 +107,7 @@ lemma anchorLoss_sub (a b q p r : ℝ) (hp : 0 < p) (hr : 0 < r) (hq : 0 < q) :
   rw [Real.log_div hp.ne' hq.ne', Real.log_div hr.ne' hq.ne']
   ring
 
-/-- **Proposition `target`.** With `a > 0`, `b ≥ 0`, `0 < q ≤ 1`, the per-position contribution
+/-- **Proposition `target`.** With `a > 0`, `b ≥ 0`, `q > 0`, the per-position contribution
 is minimized over `p ∈ (0, 1]` at `p⋆ = min{1, q b/(b-a)}` if `b > a`, and at `p⋆ = 1` if
 `b ≤ a`. -/
 theorem anchorLoss_pStar_le (a b q : ℝ) (ha : 0 < a) (hb : 0 ≤ b) (hq0 : 0 < q)
@@ -149,6 +148,8 @@ theorem anchorLoss_pStar_le (a b q : ℝ) (ha : 0 < a) (hb : 0 ≤ b) (hq0 : 0 <
         rw [hphat, lt_div_iff₀ hba] at h; linarith
       have h1 : (b - a) * (1 - 1 / p) ≤ (b - a) * Real.log p :=
         mul_le_mul_of_nonneg_left hlogp hba.le
+      -- `(b - a) log p + b q (1/p - 1) ≥ (b - a)(1 - 1/p) + b q (1/p - 1)`
+      -- `= (1/p - 1)(q b - (b - a)) ≥ 0`
       nlinarith [mul_nonneg hinvp (sub_nonneg.2 hqb)]
   · have hab' : b ≤ a := not_lt.1 hab
     rw [← sub_nonneg, anchorLoss_sub_one a b q p hp0 hq0]
@@ -163,9 +164,6 @@ theorem pStar_eq_one_of_le (a b q : ℝ) (hab : b ≤ a) : pStar a b q = 1 := by
   split_ifs with h
   · exact absurd h (not_lt.2 hab)
   · rfl
-
-/-- The critical threshold `β̄_i = (w_i/γ_i) (∑γ/∑w)`. -/
-noncomputable def betaBar (w W γ Γ : ℝ) : ℝ := (w / γ) * (Γ / W)
 
 /-- **Corollary `beta`.** With `a = w_i/∑w` and `b = β γ_i/∑γ`, the cap exists (`a < b`)
 iff `β > β̄_i`. -/
@@ -239,7 +237,7 @@ anchor rescales the SFT direction by the throttle and never rotates it. In parti
 off-target logit (`v ≠ y`) moves at rate `-c_i p_v`, proportional to its current probability, so
 under gradient flow the gap between two off-target logits `z_u - z_v` moves at rate
 `-c_i (p_u - p_v)` and the off-target distribution flattens rather than keeping its shape. -/
-theorem hasDerivAt_anchored_coord {ι : Type*} [Fintype ι] [DecidableEq ι] [Nonempty ι]
+theorem hasDerivAt_anchored_coord {ι : Type} [Fintype ι] [DecidableEq ι] [Nonempty ι]
     (a b q : ℝ) (hq : 0 < q) (y v : ι) (z : ι → ℝ) :
     HasDerivAt (fun t => anchorLoss a b q (softmax (Function.update z v t) y))
       (throttle a b q (softmax z y) * (softmax z v - if v = y then 1 else 0)) (z v) := by
@@ -280,12 +278,138 @@ theorem hasDerivAt_anchored_coord {ι : Type*} [Fintype ι] [DecidableEq ι] [No
 
 /-- The gap between two off-target logits moves at rate `-c_i (p_u - p_v)`: the difference of
 the two coordinate derivatives of `hasDerivAt_anchored_coord`. -/
-theorem offtarget_gap_rate {ι : Type*} [Fintype ι] [DecidableEq ι] [Nonempty ι]
+theorem offtarget_gap_rate {ι : Type} [Fintype ι] [DecidableEq ι] [Nonempty ι]
     (a b q : ℝ) (y u v : ι) (z : ι → ℝ) (hu : u ≠ y) (hv : v ≠ y) :
     throttle a b q (softmax z y) * (softmax z u - if u = y then 1 else 0)
       - throttle a b q (softmax z y) * (softmax z v - if v = y then 1 else 0)
       = throttle a b q (softmax z y) * (softmax z u - softmax z v) := by
   simp only [hu, hv, ite_false]
   ring
+
+/-! ### Additions: range of `p⋆`, sign of the throttle, binding, equality case -/
+
+/-- The per-token target lies in `(0, 1]`. -/
+lemma pStar_pos_le_one (a b q : ℝ) (ha : 0 < a) (hq : 0 < q) :
+    0 < pStar a b q ∧ pStar a b q ≤ 1 := by
+  unfold pStar
+  split_ifs with hab
+  · have hba : 0 < b - a := sub_pos.2 hab
+    have hbpos : 0 < b := lt_trans ha hab
+    exact ⟨lt_min one_pos (div_pos (mul_pos hq hbpos) hba), min_le_left _ _⟩
+  · exact ⟨one_pos, le_rfl⟩
+
+/-- **Sign of the throttle.** For `0 < a < b` it is positive below `q b/(b - a)` (the update moves
+toward the corpus token) and negative above it (the update pushes `p` back down). -/
+theorem throttle_sign (a b q p : ℝ) (ha : 0 < a) (hab : a < b) (hp : 0 < p) (hq : 0 < q) :
+    (p < q * b / (b - a) → 0 < throttle a b q p) ∧
+      (q * b / (b - a) < p → throttle a b q p < 0) := by
+  have hb : 0 < b := lt_trans ha hab
+  have hstar : 0 < q * b / (b - a) := div_pos (mul_pos hq hb) (sub_pos.2 hab)
+  have hzero : throttle a b q (q * b / (b - a)) = 0 :=
+    (throttle_eq_zero_iff a b q _ ha hab hstar hq).2 rfl
+  have hanti := throttle_strictAnti a b q hb hq
+  constructor
+  · intro h
+    have := hanti (Set.mem_Ioi.2 hp) (Set.mem_Ioi.2 hstar) h
+    linarith
+  · intro h
+    have := hanti (Set.mem_Ioi.2 hstar) (Set.mem_Ioi.2 hp) h
+    linarith
+
+/-- **The cap binds iff `b (1 - q) > a`.** The interior optimum `q b/(b - a)` lies below `1`
+exactly when `b(1 - q) > a`; otherwise the target is the one-hot token. -/
+theorem pStar_lt_one_iff (a b q : ℝ) (hb : 0 ≤ b) (hq0 : 0 < q) :
+    pStar a b q < 1 ↔ a < b * (1 - q) := by
+  unfold pStar
+  split_ifs with hab
+  · have hba : 0 < b - a := sub_pos.2 hab
+    rw [min_lt_iff, div_lt_one hba]
+    constructor
+    · rintro (h | h)
+      · exact absurd h (lt_irrefl 1)
+      · linarith
+    · intro h; right; linarith
+  · constructor
+    · intro h; exact absurd h (lt_irrefl 1)
+    · intro h
+      exfalso
+      -- `b (1 - q) ≤ b ≤ a` when the cap does not exist
+      have : b * (1 - q) ≤ b := by nlinarith
+      exact hab (lt_of_lt_of_le h this)
+
+/-- **Binding threshold in anchor strength.** With `a = w/W`, `b = β γ/Γ`, the cap binds iff
+`β > β̄/(1 - q)`. -/
+theorem pStar_lt_one_iff_beta (w W γ Γ β q : ℝ) (hW : 0 < W) (hγ : 0 < γ) (hΓ : 0 < Γ)
+    (hβ : 0 ≤ β) (hq0 : 0 < q) (hq1 : q < 1) :
+    pStar (w / W) (β * γ / Γ) q < 1 ↔ betaBar w W γ Γ / (1 - q) < β := by
+  have hb : 0 ≤ β * γ / Γ := div_nonneg (mul_nonneg hβ hγ.le) hΓ.le
+  have h1q : 0 < 1 - q := sub_pos.2 hq1
+  rw [pStar_lt_one_iff _ _ q hb hq0, betaBar]
+  -- both sides are `w Γ < β γ (1 - q) W` after clearing the positive denominators
+  rw [div_lt_iff₀ h1q, div_mul_div_comm, div_lt_iff₀ (mul_pos hγ hW)]
+  rw [div_lt_iff₀ hW]
+  constructor
+  · intro h
+    have h' : w * Γ < β * γ / Γ * (1 - q) * W * Γ := by nlinarith
+    have hrw : β * γ / Γ * (1 - q) * W * Γ = β * (1 - q) * (γ * W) := by field_simp
+    linarith
+  · intro h
+    have hrw : β * γ / Γ * (1 - q) * W * Γ = β * (1 - q) * (γ * W) := by field_simp
+    have h' : w * Γ < β * γ / Γ * (1 - q) * W * Γ := by linarith
+    nlinarith
+
+/-- The premium shed between initialization and the optimum is `log(p⋆/q)`. -/
+lemma shed_eq_log_ratio (a b q : ℝ) (ha : 0 < a) (hq : 0 < q) :
+    (-Real.log q) - (-Real.log (pStar a b q)) = Real.log (pStar a b q / q) := by
+  rw [Real.log_div (pStar_pos_le_one a b q ha hq).1.ne' hq.ne']
+  ring
+
+/-- **Corollary `budget`, equality case.** When the interior cap is at most `1`, the budget bound
+holds with equality. -/
+theorem budget_eq_of_interior (a b q : ℝ) (ha : 0 < a) (hab : a < b) (hq0 : 0 < q)
+    (hin : q * b / (b - a) ≤ 1) :
+    Real.log (pStar a b q / q) = -Real.log (1 - a / b) := by
+  have hb : 0 < b := lt_trans ha hab
+  have hba : 0 < b - a := sub_pos.2 hab
+  have hp : pStar a b q = q * b / (b - a) := by
+    simp only [pStar, hab, ↓reduceIte, min_eq_right hin]
+  have h1 : 1 - a / b = (b - a) / b := by field_simp
+  rw [hp, h1, ← Real.log_inv, inv_div]
+  congr 1
+  field_simp
+
+/-! ### The statements -/
+
+/-- **Proposition `target`** (`Statements.prop_target`). -/
+theorem prop_target : Statements.prop_target := by
+  intro a b q ha hb hq _
+  exact ⟨pStar_pos_le_one a b q ha hq, fun p hp0 hp1 => anchorLoss_pStar_le a b q ha hb hq p hp0 hp1⟩
+
+/-- **Eq. `kl-grad` and its regimes** (`Statements.eq_kl_grad`). -/
+theorem eq_kl_grad : Statements.eq_kl_grad := by
+  refine ⟨fun a b q p hp hq => hasDerivAt_anchorLoss a b q p hp hq, ?_,
+    fun a b q hq => throttle_at_init a b q hq,
+    fun a b q p hb hp hpq => throttle_gt_of_lt a b q p hb hp hpq,
+    fun a b q hb hq => throttle_strictAnti a b q hb hq,
+    fun a q p => by simp [throttle],
+    fun a b q p ha hab hp hq => ⟨throttle_eq_zero_iff a b q p ha hab hp hq,
+      (throttle_sign a b q p ha hab hp hq).1, (throttle_sign a b q p ha hab hp hq).2⟩⟩
+  intro ι _ _ _ a b q y v z hq
+  exact hasDerivAt_anchored_coord a b q hq y v z
+
+/-- **Corollary `beta`** (`Statements.cor_beta`). -/
+theorem cor_beta : Statements.cor_beta := by
+  refine ⟨fun w W γ Γ β _ hW hγ hΓ => cap_exists_iff w W γ Γ β hW hγ hΓ, ?_⟩
+  intro w W γ Γ β q _ hW hγ hΓ hβ hq0 hq1
+  exact pStar_lt_one_iff_beta w W γ Γ β q hW hγ hΓ hβ hq0 hq1
+
+/-- **Corollary `budget`** (`Statements.cor_budget`). -/
+theorem cor_budget : Statements.cor_budget := by
+  refine ⟨fun w W γ Γ β hW hγ hΓ hβ => ratio_eq_betaBar_div w W γ Γ β hW hγ hΓ hβ,
+    fun a b q ha _ hq => shed_eq_log_ratio a b q ha hq,
+    fun a b q ha hab hq => ⟨budget_bound a b q ha hab hq, budget_eq_of_interior a b q ha hab hq⟩,
+    fun a b q hab _ => budget_uncapped a b q hab,
+    fun bb β₁ β₂ h0 h1 h12 => budget_anti_in_beta bb β₁ β₂ h0 h1 h12,
+    fun bb₁ bb₂ β h0 h12 h2 => budget_mono_in_betaBar bb₁ bb₂ β h0 h12 h2⟩
 
 end WebKD

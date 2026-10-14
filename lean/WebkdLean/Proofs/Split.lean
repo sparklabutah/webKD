@@ -1,12 +1,19 @@
-import Mathlib
+import WebkdLean.Proofs.Softmax
+
+set_option autoImplicit false
+set_option relaxedAutoImplicit false
 
 /-!
-# Where the uniform update goes (Proposition `split`)
+# Where the uniform update goes (Lemma `sandwich`, Proposition `split`)
 
-Formalizes both parts of Proposition `split`: (i) the action's share of the uniform loss
-restricted to `I_rat ∪ I_act` written with pooled perplexities, and (ii) the bound on the
-action's share of the logit-gradient mass under Assumption `cap`, using Lemma `sandwich` as
-the hypothesis on the per-token gradient norms.
+Strategy, following Appendix `theory-update`. (i) With every token weighted equally, the common
+factor `1/(n_rat + n_act)` cancels and `n_C log PPL_C = ∑_{I_C} CE_i`, so the action's share of the
+pooled uniform loss is a ratio of cross-entropy sums (`loss_share`). (ii) Lemma `sandwich` bounds
+each logit-gradient norm `‖p - e_y‖₂` between `1 - e^{-CE}` and `√2 (1 - e^{-CE})` (Softmax.lean).
+On the action side `1 - e^{-x} ≤ x` gives `G_act ≤ X`; on the rationale side the chord of the
+concave map `x ↦ 1 - e^{-x}` on `[0, Λ]` gives `G_rat ≥ Y`; and `t/(t+s)` is increasing in `t` and
+decreasing in `s` (`grad_share`). `grad_share_logits` composes this with Lemma `sandwich`, so the
+statement is about the actual gradient norms of per-position logits.
 -/
 
 namespace WebKD
@@ -38,7 +45,7 @@ lemma chord_le_one_sub_exp_neg (Λ x : ℝ) (hΛ : 0 < Λ) (hx0 : 0 ≤ x) (hxΛ
   rw [this]
   linarith
 
-variable {ι : Type*}
+variable {ι : Type}
 
 /-- **Proposition `split` (i).** Restricted to `I_rat ∪ I_act`, the action's share of the
 uniform loss is `n_act log PPL_act / (n_act log PPL_act + n_rat log PPL_rat)`, where
@@ -68,6 +75,7 @@ lemma ratio_mono (t1 t2 s1 s2 : ℝ) (ht1 : 0 ≤ t1) (ht12 : t1 ≤ t2) (hs2 : 
   · have hd1 : 0 < t1 + s1 := by linarith
     have hd2 : 0 < t2 + s2 := by linarith
     rw [div_le_div_iff₀ hd1 hd2]
+    -- `t₁ (t₂ + s₂) ≤ t₂ (t₁ + s₁)`, since `t₁ s₂ ≤ t₁ s₁ ≤ t₂ s₁`
     nlinarith [mul_le_mul_of_nonneg_left hs21 ht1, mul_le_mul_of_nonneg_right ht12 (by linarith : 0 ≤ s1)]
 
 /-- **Proposition `split` (ii).** Under Assumption `cap` (`CE_i ≤ Λ` on the rationale) and
@@ -102,5 +110,44 @@ theorem grad_share (Irat Iact : Finset ι) (CE g : ι → ℝ) (Λ : ℝ) (hΛ :
     mul_nonneg (div_nonneg (one_sub_exp_neg_nonneg Λ hΛ.le) hΛ.le)
       (Finset.sum_nonneg fun i _ => hCE0 i)
   exact ratio_mono _ _ _ _ (Finset.sum_nonneg fun i _ => hg0 i) hGact hY0 hY
+
+/-! ### Composition with Lemma `sandwich` and the statements -/
+
+/-- `CE = -log p_y ≥ 0`, since the softmax probability of the target is at most `1`. -/
+lemma nll_nonneg {V : Type} [Fintype V] [Nonempty V] (y : V) (z : V → ℝ) : 0 ≤ nll y z := by
+  unfold nll
+  have h1 : softmax z y ≤ 1 := by
+    have := Finset.single_le_sum (fun v _ => softmax_nonneg z v) (Finset.mem_univ y)
+    rwa [softmax_sum] at this
+  have := Real.log_nonpos (softmax_nonneg z y) h1
+  linarith
+
+/-- **Proposition `split` (ii) for per-position logits.** `grad_share` with `CE_i` and the
+logit-gradient norms of the actual softmax cross-entropies; Lemma `sandwich` supplies its two
+gradient-norm hypotheses. -/
+theorem grad_share_logits {V : Type} [Fintype V] [DecidableEq V] [Nonempty V]
+    (Irat Iact : Finset ι) (z : ι → V → ℝ) (y : ι → V) (Λ : ℝ) (hΛ : 0 < Λ)
+    (hcap : ∀ i ∈ Irat, nll (y i) (z i) ≤ Λ) :
+    (∑ i ∈ Iact, logitGradNorm (y i) (z i))
+        / ((∑ i ∈ Iact, logitGradNorm (y i) (z i)) + ∑ i ∈ Irat, logitGradNorm (y i) (z i))
+      ≤ (Real.sqrt 2 * ∑ i ∈ Iact, nll (y i) (z i))
+        / ((Real.sqrt 2 * ∑ i ∈ Iact, nll (y i) (z i))
+            + (1 - Real.exp (-Λ)) / Λ * ∑ i ∈ Irat, nll (y i) (z i)) :=
+  grad_share Irat Iact (fun i => nll (y i) (z i)) (fun i => logitGradNorm (y i) (z i)) Λ hΛ
+    (fun i => nll_nonneg (y i) (z i)) hcap (fun i => (sandwich (y i) (z i)).1)
+    (fun i => (sandwich (y i) (z i)).2)
+
+/-- **Lemma `sandwich`** (`Statements.lem_sandwich`). -/
+theorem lem_sandwich : Statements.lem_sandwich := by
+  intro ι _ _ _ y z
+  exact ⟨fun v => hasDerivAt_nll_coord y v z, (sandwich y z).1, (sandwich y z).2⟩
+
+/-- **Proposition `split`** (`Statements.prop_split`). -/
+theorem prop_split : Statements.prop_split := by
+  refine ⟨?_, ?_⟩
+  · intro ι _ Irat Iact CE hdisj hr ha
+    exact loss_share Irat Iact hdisj CE hr ha
+  · intro ι V _ _ _ Irat Iact z y Λ hΛ hcap
+    exact grad_share_logits Irat Iact z y Λ hΛ hcap
 
 end WebKD
